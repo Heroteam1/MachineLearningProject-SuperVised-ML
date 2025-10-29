@@ -378,110 +378,144 @@ else:
         else:
             st.warning("No preprocessed data available to download.")
 if selected == 'Machine Learning':
-    num_columns, cat_columns, bool_columns = function.categorical_numerical(st.session_state.new_df)
-
-    checked = st.checkbox("Drop Non-Numeric Columns Before Training Model")
-    if checked:
-        st.session_state.new_df = st.session_state.new_df.drop(columns=cat_columns)
-        st.write("Non-numeric columns dropped:")
-        st.write(cat_columns)
-        st.success("Non-Numeric Columns Dropped Successfully")
-    else:
-        st.info("Proceeding without dropping non-numeric columns may lead to errors during model training.")
-
-    if bool_columns:
-        st.write("Note: The dataset contains boolean columns. They will be treated as numeric (0 and 1) during model training.")
-        boolfix = st.checkbox("Convert Boolean Columns to Numeric (0 and 1)")
-        if boolfix:
-            for col in bool_columns:
-                st.session_state.new_df[col] = st.session_state.new_df[col].astype(int)
-            st.success("Boolean Columns Converted to Numeric Successfully")
-
-    model = st.selectbox(
-        "Select Model Type", 
-        ["regression", "classification", "neuralnetwork for regression", "neuralnetwork for classification"]
-    )
-    #Show hyperparameters only for regression models
-    show_regression = model in ["regression"]
-    if show_regression:
-        st.write("### Regression Model Hyperparameters (Adjust Before Training)")
-        test_size = st.slider("Test Size (as a fraction)", min_value=0.1, max_value=0.5, value=0.2, step=0.05)
-        random_state = st.number_input("Random State (for reproducibility)", min_value=0, max_value=1000, value=42)
-    else:
-        # Default values; not shown to user
-        test_size = 0.2
-        random_state = 42
-    # Show hyperparameters ONLY for classification models
-    show_classification = model in ["classification"]
-    if show_classification:
-        st.write("### Classification Model Hyperparameters (Adjust Before Training)")
-        test_size = st.slider("Test Size (as a fraction)", min_value=0.1, max_value=0.5, value=0.2, step=0.05)
-        random_state = st.number_input("Random State (for reproducibility)", min_value=0, max_value=1000, value=42)
-    else:
-        # Default values; not shown to user
-        test_size = 0.2
-        random_state = 42
-    # Show hyperparameters ONLY for neural network models
-    show_nn = model in ["neuralnetwork for regression", "neuralnetwork for classification"]
-    if show_nn:
-        st.write("### Neural Network Hyperparameters (Adjust Before Training)")
-        n_hidden_layers = st.number_input(
-            "Number of Hidden Layers", min_value=1, max_value=5, value=2
-        )
-        neurons_per_layer = st.number_input(
-            "Neurons per Hidden Layer", min_value=1, max_value=512, value=64
-        )
-        learning_rate = st.number_input(
-            "Learning Rate", min_value=0.0001, max_value=1.0, value=0.001, step=0.0001, format="%.4f"
-        )
-        epochs = st.number_input(
-            "Epochs", min_value=10, max_value=500, value=50, step=10
-        )
-        batch_size = st.number_input(
-            "Batch Size", min_value=1, max_value=256, value=32
-        )
-    else:
-        # Default values; not shown to user
-        n_hidden_layers = None
-        neurons_per_layer = None
-        learning_rate = None
-        epochs = None
-        batch_size = None
-
-    target_column = st.selectbox(
-        label="Enter the Target Column Name", 
-        options=st.session_state.new_df.columns
-    )
-
-    if st.button("Train Model"):
-        if target_column in st.session_state.new_df.columns:
-            if model == "regression":
-                from machinelearningfunctions import regression_model
-                regression_model(st.session_state.new_df, target_column)
-            elif model == "classification":
-                from machinelearningfunctions import classification_model
-                classification_model(st.session_state.new_df, target_column)
-            elif model == 'neuralnetwork for regression':
-                from machinelearningfunctions import neural_network
-                neural_network(
-                    st.session_state.new_df, 
-                    target_column,
+    st.header("🎯 Supervised Machine Learning")
+    
+    if 'new_df' not in st.session_state or st.session_state.new_df.empty:
+        st.warning("Please upload and preprocess your data first.")
+        st.stop()
+    
+    # Problem type selection
+    problem_type = st.radio("Select Problem Type", ["Classification", "Regression", "Neural Network"])
+    
+    # Data preparation info
+    st.info("💡 Make sure your target column is properly encoded. Use the Data Preprocessing tab if needed.")
+    
+    # Target column selection
+    target_column = st.selectbox("Select Target Column", st.session_state.new_df.columns)
+    
+    # Display target distribution
+    st.subheader("📊 Target Variable Distribution")
+    target_counts = st.session_state.new_df[target_column].value_counts()
+    fig = px.bar(x=target_counts.index, y=target_counts.values, 
+                 title=f"Distribution of {target_column}")
+    st.plotly_chart(fig)
+    
+    if problem_type == "Classification":
+        st.subheader("🔍 Classification Models")
+        
+        # Model selection
+        model_option = st.radio("Choose training option:", 
+                               ["Train Single Model", "Compare All Models"])
+        
+        # Common parameters
+        col1, col2 = st.columns(2)
+        with col1:
+            test_size = st.slider("Test Size", 0.1, 0.5, 0.2, 0.05)
+        with col2:
+            random_state = st.number_input("Random State", 0, 1000, 42)
+        
+        if model_option == "Train Single Model":
+            # Single model training with hyperparameters
+            model_name = st.selectbox("Select Model", 
+                                     list(get_classification_models_with_params().keys()))
+            
+            # Dynamic hyperparameters
+            st.subheader("⚙️ Model Hyperparameters")
+            model_info = get_classification_models_with_params()[model_name]
+            hyperparams = {}
+            
+            for param_name, param_values in model_info['params'].items():
+                if param_values:
+                    default_val = param_values[0] if param_values else None
+                    if isinstance(default_val, (int, float)):
+                        hyperparams[param_name] = st.slider(
+                            f"{param_name}", 
+                            min_value=min(param_values),
+                            max_value=max(param_values),
+                            value=default_val
+                        )
+                    else:
+                        hyperparams[param_name] = st.selectbox(
+                            f"{param_name}", 
+                            options=param_values
+                        )
+            
+            if st.button("🚀 Train Model", type="primary"):
+                with st.spinner(f"Training {model_name}..."):
+                    results = train_classification_model(
+                        st.session_state.new_df, target_column, model_name,
+                        test_size, random_state, **hyperparams
+                    )
+                    
+                    if results:
+                        display_single_model_results(results)
+        
+        else:  # Compare All Models
+            if st.button("🏆 Compare All Models", type="primary"):
+                with st.spinner("Training all models for comparison..."):
+                    results = compare_classification_models(
+                        st.session_state.new_df, target_column, test_size, random_state
+                    )
+                    
+                    if results:
+                        display_model_comparison(results)
+    
+    elif problem_type == "Neural Network":
+        st.subheader("🧠 Neural Network Classifier")
+        
+        # Neural network hyperparameters
+        col1, col2 = st.columns(2)
+        with col1:
+            n_hidden_layers = st.slider("Hidden Layers", 1, 5, 2)
+            neurons_per_layer = st.slider("Neurons per Layer", 16, 256, 64)
+            learning_rate = st.selectbox("Learning Rate", [0.001, 0.01, 0.1, 0.0001])
+        
+        with col2:
+            epochs = st.slider("Epochs", 10, 500, 100)
+            batch_size = st.slider("Batch Size", 16, 128, 32)
+            test_size = st.slider("Test Size", 0.1, 0.5, 0.2, 0.05)
+        
+        if st.button("🚀 Train Neural Network", type="primary"):
+            with st.spinner("Training neural network..."):
+                results = enhanced_neural_network_classifier(
+                    st.session_state.new_df, target_column,
                     n_hidden_layers=n_hidden_layers,
                     neurons_per_layer=neurons_per_layer,
                     learning_rate=learning_rate,
                     epochs=epochs,
-                    batch_size=batch_size
+                    batch_size=batch_size,
+                    test_size=test_size
                 )
-            elif model == 'neuralnetwork for classification':
-                from machinelearningfunctions import neural_network_classifier
-                neural_network_classifier(
-                    st.session_state.new_df, 
-                    target_column,
-                    n_hidden_layers=n_hidden_layers,
-                    neurons_per_layer=neurons_per_layer,
-                    learning_rate=learning_rate,
-                    epochs=epochs,
-                    batch_size=batch_size
-                )
-        else:
-            st.error("The specified target column does not exist in the dataset. Please enter a valid column name.")
+                
+                if results:
+                    display_single_model_results(results)
+    
+    else:  # Regression
+        st.subheader("📈 Regression Models")
+        
+        if st.button("🚀 Train Regression Models", type="primary"):
+            with st.spinner("Training regression models..."):
+                results = regression_model(st.session_state.new_df, target_column)
+                
+                if results:
+                    # Display regression results
+                    st.subheader("🏆 Regression Results")
+                    
+                    comparison_data = []
+                    for model_name, result in results.items():
+                        comparison_data.append({
+                            'Model': model_name,
+                            'MSE': result['MSE'],
+                            'R² Score': result['R2'],
+                            'MAE': result['MAE']
+                        })
+                    
+                    comparison_df = pd.DataFrame(comparison_data)
+                    comparison_df = comparison_df.sort_values('R² Score', ascending=False)
+                    
+                    st.dataframe(
+                        comparison_df.style.format("{:.3f}").background_gradient(
+                            subset=['R² Score'], 
+                            cmap='RdYlGn'
+                        )
+                    )
