@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,7 +13,16 @@ import home_page
 import base64
 import streamlit_authenticator as stauth
 
-
+# ADD THESE NEW IMPORTS for machine learning
+from machinelearningfunctions import (
+    get_classification_models_with_params, 
+    train_classification_model, 
+    compare_classification_models,
+    display_single_model_results, 
+    display_model_comparison,
+    enhanced_neural_network_classifier,
+    regression_model
+)
 import streamlit as st
 
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
@@ -378,110 +388,233 @@ else:
         else:
             st.warning("No preprocessed data available to download.")
 if selected == 'Machine Learning':
-    num_columns, cat_columns, bool_columns = function.categorical_numerical(st.session_state.new_df)
-
-    checked = st.checkbox("Drop Non-Numeric Columns Before Training Model")
-    if checked:
-        st.session_state.new_df = st.session_state.new_df.drop(columns=cat_columns)
-        st.write("Non-numeric columns dropped:")
-        st.write(cat_columns)
-        st.success("Non-Numeric Columns Dropped Successfully")
+    st.header("🎯 Supervised Machine Learning")
+    
+    if 'new_df' not in st.session_state or st.session_state.new_df.empty:
+        st.warning("Please upload and preprocess your data first.")
+        st.stop()
+    
+    # Create a copy of the dataframe for ML processing
+    ml_df = st.session_state.new_df.copy()
+    
+    # Data Preprocessing Section for ML
+    st.subheader("🔧 Data Preparation for Machine Learning")
+    
+    # Automatic encoding of categorical variables
+    categorical_columns = ml_df.select_dtypes(include=['object', 'category']).columns.tolist()
+    
+    if categorical_columns:
+        st.info(f"🔍 Found {len(categorical_columns)} categorical columns that need encoding: {categorical_columns}")
+        
+        encoding_method = st.selectbox(
+            "Choose encoding method for categorical columns:",
+            ["One-Hot Encoding", "Label Encoding", "Auto-encode and proceed"]
+        )
+        
+        if st.button("Apply Encoding", key="encode_categorical"):
+            if encoding_method == "One-Hot Encoding":
+                ml_df = pd.get_dummies(ml_df, columns=categorical_columns, drop_first=True)
+                st.success("✅ One-Hot Encoding applied successfully!")
+            elif encoding_method == "Label Encoding":
+                from sklearn.preprocessing import LabelEncoder
+                le = LabelEncoder()
+                for col in categorical_columns:
+                    ml_df[col] = le.fit_transform(ml_df[col].astype(str))
+                st.success("✅ Label Encoding applied successfully!")
+            else:  # Auto-encode
+                ml_df = pd.get_dummies(ml_df, columns=categorical_columns, drop_first=True)
+                st.success("✅ Auto-encoding applied successfully!")
+            
+            st.write("### Processed Data Preview:")
+            st.dataframe(ml_df.head())
     else:
-        st.info("Proceeding without dropping non-numeric columns may lead to errors during model training.")
-
-    if bool_columns:
-        st.write("Note: The dataset contains boolean columns. They will be treated as numeric (0 and 1) during model training.")
-        boolfix = st.checkbox("Convert Boolean Columns to Numeric (0 and 1)")
-        if boolfix:
-            for col in bool_columns:
-                st.session_state.new_df[col] = st.session_state.new_df[col].astype(int)
-            st.success("Boolean Columns Converted to Numeric Successfully")
-
-    model = st.selectbox(
-        "Select Model Type", 
-        ["regression", "classification", "neuralnetwork for regression", "neuralnetwork for classification"]
-    )
-    #Show hyperparameters only for regression models
-    show_regression = model in ["regression"]
-    if show_regression:
-        st.write("### Regression Model Hyperparameters (Adjust Before Training)")
-        test_size = st.slider("Test Size (as a fraction)", min_value=0.1, max_value=0.5, value=0.2, step=0.05)
-        random_state = st.number_input("Random State (for reproducibility)", min_value=0, max_value=1000, value=42)
-    else:
-        # Default values; not shown to user
-        test_size = 0.2
-        random_state = 42
-    # Show hyperparameters ONLY for classification models
-    show_classification = model in ["classification"]
-    if show_classification:
-        st.write("### Classification Model Hyperparameters (Adjust Before Training)")
-        test_size = st.slider("Test Size (as a fraction)", min_value=0.1, max_value=0.5, value=0.2, step=0.05)
-        random_state = st.number_input("Random State (for reproducibility)", min_value=0, max_value=1000, value=42)
-    else:
-        # Default values; not shown to user
-        test_size = 0.2
-        random_state = 42
-    # Show hyperparameters ONLY for neural network models
-    show_nn = model in ["neuralnetwork for regression", "neuralnetwork for classification"]
-    if show_nn:
-        st.write("### Neural Network Hyperparameters (Adjust Before Training)")
-        n_hidden_layers = st.number_input(
-            "Number of Hidden Layers", min_value=1, max_value=5, value=2
-        )
-        neurons_per_layer = st.number_input(
-            "Neurons per Hidden Layer", min_value=1, max_value=512, value=64
-        )
-        learning_rate = st.number_input(
-            "Learning Rate", min_value=0.0001, max_value=1.0, value=0.001, step=0.0001, format="%.4f"
-        )
-        epochs = st.number_input(
-            "Epochs", min_value=10, max_value=500, value=50, step=10
-        )
-        batch_size = st.number_input(
-            "Batch Size", min_value=1, max_value=256, value=32
-        )
-    else:
-        # Default values; not shown to user
-        n_hidden_layers = None
-        neurons_per_layer = None
-        learning_rate = None
-        epochs = None
-        batch_size = None
-
-    target_column = st.selectbox(
-        label="Enter the Target Column Name", 
-        options=st.session_state.new_df.columns
-    )
-
-    if st.button("Train Model"):
-        if target_column in st.session_state.new_df.columns:
-            if model == "regression":
-                from machinelearningfunctions import regression_model
-                regression_model(st.session_state.new_df, target_column)
-            elif model == "classification":
-                from machinelearningfunctions import classification_model
-                classification_model(st.session_state.new_df, target_column)
-            elif model == 'neuralnetwork for regression':
-                from machinelearningfunctions import neural_network
-                neural_network(
-                    st.session_state.new_df, 
-                    target_column,
-                    n_hidden_layers=n_hidden_layers,
-                    neurons_per_layer=neurons_per_layer,
-                    learning_rate=learning_rate,
-                    epochs=epochs,
-                    batch_size=batch_size
-                )
-            elif model == 'neuralnetwork for classification':
-                from machinelearningfunctions import neural_network_classifier
-                neural_network_classifier(
-                    st.session_state.new_df, 
-                    target_column,
-                    n_hidden_layers=n_hidden_layers,
-                    neurons_per_layer=neurons_per_layer,
-                    learning_rate=learning_rate,
-                    epochs=epochs,
-                    batch_size=batch_size
-                )
+        st.success("✅ All columns are numeric - ready for machine learning!")
+    
+    # Check for missing values
+    if ml_df.isnull().sum().sum() > 0:
+        st.warning("⚠️ Dataset contains missing values. Consider handling them in the Data Preprocessing tab.")
+        if st.button("Remove rows with missing values", key="remove_missing"):
+            ml_df = ml_df.dropna()
+            st.success("✅ Rows with missing values removed!")
+    
+    # Problem type selection
+    st.subheader("🎯 Select Learning Type")
+    problem_type = st.radio("Select Problem Type", ["Classification", "Regression", "Neural Network"])
+    
+    # Target column selection (from processed data)
+    target_column = st.selectbox("Select Target Column", ml_df.columns)
+    
+    # Display target distribution
+    st.subheader("📊 Target Variable Distribution")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        target_counts = ml_df[target_column].value_counts()
+        fig = px.bar(x=target_counts.index.astype(str), y=target_counts.values, 
+                     title=f"Distribution of {target_column}")
+        st.plotly_chart(fig)
+    
+    with col2:
+        st.write("**Target Statistics:**")
+        st.write(f"- Data type: `{ml_df[target_column].dtype}`")
+        st.write(f"- Unique values: `{ml_df[target_column].nunique()}`")
+        st.write(f"- Missing values: `{ml_df[target_column].isnull().sum()}`")
+        
+        if ml_df[target_column].dtype in ['object', 'category']:
+            st.info("🎯 Target is categorical - suitable for Classification")
         else:
-            st.error("The specified target column does not exist in the dataset. Please enter a valid column name.")
+            st.info("📈 Target is numeric - suitable for Regression")
+    
+    # Model training section
+    st.subheader("🚀 Model Training")
+    
+    if problem_type == "Classification":
+        # Classification models
+        model_option = st.radio("Choose training option:", 
+                               ["Train Single Model", "Compare All Models"])
+        
+        # Training parameters
+        col1, col2 = st.columns(2)
+        with col1:
+            test_size = st.slider("Test Size", 0.1, 0.5, 0.2, 0.05, key="cls_test_size")
+        with col2:
+            random_state = st.number_input("Random State", 0, 1000, 42, key="cls_random_state")
+        
+        if model_option == "Train Single Model":
+            model_name = st.selectbox("Select Model", [
+                "Logistic Regression", "Decision Tree", "Random Forest", 
+                "SVM", "XGBoost", "Gradient Boosting", "K-Nearest Neighbors", "Naive Bayes"
+            ], key="single_model")
+            
+            if st.button("🚀 Train Classification Model", type="primary", key="train_single_cls"):
+                try:
+                    from machinelearningfunctions import train_classification_model, display_single_model_results
+                    
+                    with st.spinner(f"Training {model_name}..."):
+                        results = train_classification_model(
+                            ml_df, target_column, model_name, test_size, random_state
+                        )
+                        
+                        if results:
+                            display_single_model_results(results)
+                        else:
+                            st.error("Model training failed. Check your data and try again.")
+                except Exception as e:
+                    st.error(f"Error training model: {str(e)}")
+                    st.info("💡 Tip: Make sure your target column is properly encoded for classification.")
+        
+        else:  # Compare All Models
+            if st.button("🏆 Compare All Classification Models", type="primary", key="compare_cls"):
+                try:
+                    from machinelearningfunctions import compare_classification_models, display_model_comparison
+                    
+                    with st.spinner("Training all models for comparison..."):
+                        results = compare_classification_models(ml_df, target_column, test_size, random_state)
+                        
+                        if results:
+                            display_model_comparison(results)
+                        else:
+                            st.error("Model comparison failed. Check your data and try again.")
+                except Exception as e:
+                    st.error(f"Error comparing models: {str(e)}")
+    
+    elif problem_type == "Regression":
+        # Regression models
+        st.subheader("📈 Regression Models")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            test_size = st.slider("Test Size", 0.1, 0.5, 0.2, 0.05, key="reg_test_size")
+        with col2:
+            random_state = st.number_input("Random State", 0, 1000, 42, key="reg_random_state")
+        
+        if st.button("🚀 Train Regression Models", type="primary", key="train_reg"):
+            try:
+                from machinelearningfunctions import regression_model
+                
+                with st.spinner("Training regression models..."):
+                    # Ensure target is numeric for regression
+                    if ml_df[target_column].dtype in ['object', 'category']:
+                        st.warning("⚠️ Target column is categorical. Converting to numeric for regression...")
+                        from sklearn.preprocessing import LabelEncoder
+                        le = LabelEncoder()
+                        ml_df[target_column] = le.fit_transform(ml_df[target_column].astype(str))
+                    
+                    results = regression_model(ml_df, target_column, test_size, random_state)
+                    
+                    if results:
+                        # Display regression results
+                        st.subheader("🏆 Regression Results")
+                        
+                        comparison_data = []
+                        for model_name, result in results.items():
+                            comparison_data.append({
+                                'Model': model_name,
+                                'MSE': f"{result['MSE']:.4f}",
+                                'R² Score': f"{result['R2']:.4f}",
+                                'MAE': f"{result['MAE']:.4f}"
+                            })
+                        
+                        comparison_df = pd.DataFrame(comparison_data)
+                        comparison_df = comparison_df.sort_values('R² Score', ascending=False)
+                        
+                        # Display results
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            st.dataframe(
+                                comparison_df.style.background_gradient(
+                                    subset=['R² Score'], 
+                                    cmap='RdYlGn'
+                                )
+                            )
+                        
+                        with col2:
+                            st.metric("Best Model", comparison_df.iloc[0]['Model'])
+                            st.metric("Best R² Score", comparison_df.iloc[0]['R² Score'])
+                    else:
+                        st.error("Regression training failed. Check your data and try again.")
+            except Exception as e:
+                st.error(f"Regression error: {str(e)}")
+                st.info("💡 Make sure all features are numeric. Use the encoding options above.")
+    
+    else:  # Neural Network
+        st.subheader("🧠 Neural Network")
+        
+        nn_type = st.radio("Neural Network Type", ["Classifier", "Regressor"])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            n_hidden_layers = st.slider("Hidden Layers", 1, 5, 2)
+            neurons_per_layer = st.slider("Neurons per Layer", 16, 256, 64)
+            learning_rate = st.selectbox("Learning Rate", [0.001, 0.01, 0.1, 0.0001])
+        
+        with col2:
+            epochs = st.slider("Epochs", 10, 500, 100)
+            batch_size = st.slider("Batch Size", 16, 128, 32)
+            test_size = st.slider("Test Size", 0.1, 0.5, 0.2, 0.05, key="nn_test_size")
+        
+        if st.button("🚀 Train Neural Network", type="primary", key="train_nn"):
+            try:
+                if nn_type == "Classifier":
+                    from machinelearningfunctions import enhanced_neural_network_classifier, display_single_model_results
+                    
+                    with st.spinner("Training neural network classifier..."):
+                        results = enhanced_neural_network_classifier(
+                            ml_df, target_column,
+                            n_hidden_layers=n_hidden_layers,
+                            neurons_per_layer=neurons_per_layer,
+                            learning_rate=learning_rate,
+                            epochs=epochs,
+                            batch_size=batch_size,
+                            test_size=test_size
+                        )
+                        
+                        if results:
+                            display_single_model_results(results)
+                else:
+                    st.info("Neural Network Regressor coming soon! Try the regression models above.")
+                    
+            except Exception as e:
+                st.error(f"Neural network error: {str(e)}")
+                st.info("💡 Make sure your data is properly encoded and numeric.")
